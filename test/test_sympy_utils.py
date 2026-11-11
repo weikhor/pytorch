@@ -1188,6 +1188,14 @@ class TestSympyFunctions(TestCase):
                 self.assertEqual(actual, expected)
                 self.assertTrue(0 <= actual < nv * nv)
 
+    def test_modular_indexing_float_coefficients_terminate(self):
+        # sympy.gcd returns Float(1.0) here, which is != 1 but equal_valued to 1
+        x = sympy.Symbol("x", integer=True, nonnegative=True)
+        self.assertIsInstance(ModularIndexing(2.0 * x, 4, 8), ModularIndexing)
+        self.assertIsInstance(ModularIndexing(0.5 * x, 2, 8), ModularIndexing)
+        four = sympy.Float(4)
+        self.assertIsInstance(ModularIndexing(2 * x, four, 8), ModularIndexing)
+
 
 class TestSingletonInt(TestCase):
     def test_basic(self):

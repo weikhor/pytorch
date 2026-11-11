@@ -351,7 +351,7 @@ class ModularIndexing(sympy.Function):
         try:
             if divisor != 1:
                 gcd = safe_gcd(base, divisor)
-                if gcd != 1:
+                if not equal_valued(gcd, 1):
                     return ModularIndexing(
                         sympy.simplify(base / gcd),
                         sympy.simplify(divisor / gcd),
