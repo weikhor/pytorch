@@ -27,9 +27,12 @@ from torch._inductor.codegen.triton import (
     get_triton_reduction_function,
     IndexingOptions,
     TMACompatibilityChecker,
+    triton_compute_type,
+    triton_store_type,
     TritonCSEVariable,
     TritonKernel,
     TritonKernelOverrides,
+    TritonOverrides,
     TritonScheduling,
     TritonSymbols,
 )
@@ -1865,6 +1868,28 @@ def helper(x):
                 {"scale": "fp32", "runtime_scale": "fp32"},
             )
 
+    def test_no_fp64_compute_type_when_device_unsupported(self):
+        # https://github.com/pytorch/pytorch/issues/201796
+        class FakeGraph:
+            current_device = torch.device("cuda")
+
+        with V.set_graph_handler(FakeGraph()):
+            self.assertEqual(triton_compute_type(torch.float64), "tl.float64")
+            with patch(
+                "torch._inductor.codegen.triton.device_supports_fp64",
+                return_value=False,
+            ):
+                self.assertEqual(triton_compute_type(torch.float64), "tl.float32")
+                self.assertEqual(
+                    TritonOverrides.to_dtype("(ks0)", torch.float64),
+                    "(ks0).to(tl.float32)",
+                )
+                self.assertEqual(
+                    TritonOverrides.constant(2.0, torch.float64),
+                    "tl.full([], 2.0, tl.float32)",
+                )
+                self.assertEqual(triton_store_type(torch.float64), "tl.float64")
+
     @unittest.skipUnless(HAS_GPU_AND_TRITON, "requires GPU and Triton")
     @patch("torch._inductor.codegen.triton.device_supports_fp64", return_value=False)
     @patch(
@@ -1885,9 +1910,16 @@ def helper(x):
         def div_by_shape(x):
             return x / x.shape[0]
 
+        def add_shape_div_float(x):
+            # https://github.com/pytorch/pytorch/issues/201796
+            return x + x.shape[0] / 2.0
+
         x = torch.randn(16, 16, device=GPU_TYPE)
-        compiled = torch.compile(div_by_shape, dynamic=True)
-        _, kernels = run_and_get_kernels(compiled, x, remove_quote=True)
+        kernels = []
+        for fn in (div_by_shape, add_shape_div_float):
+            torch._dynamo.reset()
+            compiled = torch.compile(fn, dynamic=True)
+            kernels += run_and_get_kernels(compiled, x, remove_quote=True)[1]
         # Extract only the function body (after ``def triton_...:``) to avoid
         # matching metadata like ``'has_fp64': True`` in DeviceProperties.
         matched_kernel_body = False

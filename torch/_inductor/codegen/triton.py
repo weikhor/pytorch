@@ -1201,8 +1201,14 @@ texpr = TritonPrinter().doprint
 
 
 def triton_compute_type(dtype: torch.dtype) -> str:
-    """Convert torch.dtype to triton type and upcast [b]float16 to float32"""
-    return triton_type(upcast_compute_type(dtype))
+    """Convert torch.dtype to triton type, upcasting [b]float16 to float32 and
+    downcasting float64 to float32 on devices without fp64 support"""
+    dtype = upcast_compute_type(dtype)
+    if dtype == torch.float64 and not device_supports_fp64(
+        getattr(V.graph, "current_device", None)
+    ):
+        dtype = torch.float32
+    return triton_type(dtype)
 
 
 def triton_store_type(dtype: torch.dtype) -> str:
@@ -2611,7 +2617,7 @@ class TritonKernelOverrides(TritonOverrides):
         if real_index_dtype != dtype or var.dtype != dtype:
             var = V.kernel.cse.generate(
                 V.kernel.compute,
-                f"({var}).to({triton_type(dtype)})",
+                f"({var}).to({triton_compute_type(dtype)})",
                 dtype=dtype,
                 shape=var.shape,
             )
