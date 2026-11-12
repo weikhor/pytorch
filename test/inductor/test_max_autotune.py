@@ -1598,6 +1598,39 @@ class TestMaxAutotune(TestCase):
             self.assertEqual(conv1x1(input_tensor), out, atol=1e-2, rtol=0)
 
     @fresh_cache()
+    def test_autotune_conv1x1_cpp_wrapper(self):
+        # conv1x1_via_mm has no C++ kernel, so it must not be offered under cpp_wrapper
+        conv1x1 = torch.nn.Conv2d(512, 32, kernel_size=1).to(GPU_TYPE).eval()
+        x = torch.randn(5, 512, 3, 3, device=GPU_TYPE)
+        names: list[str] = []
+
+        def prefer_conv1x1_via_mm(choices):
+            names.extend(c.name for c in choices)
+            return [c for c in choices if c.name == "conv1x1_via_mm"] or choices
+
+        torch._dynamo.reset()
+        add_preprocessing_fn(prefer_conv1x1_via_mm)
+        try:
+            with (
+                config.patch(
+                    {
+                        "cpp_wrapper": True,
+                        "max_autotune": True,
+                        "max_autotune_conv_backends": "TRITON",
+                        "layout_optimization": False,
+                    }
+                ),
+                torch.no_grad(),
+            ):
+                out = torch.compile(conv1x1)(x)
+        finally:
+            clear_preprocessing_fns(clear_defaults=False)
+
+        self.assertTrue(any(n.startswith("triton_convolution2d") for n in names))
+        self.assertNotIn("conv1x1_via_mm", names)
+        self.assertEqual(conv1x1(x), out, atol=1e-2, rtol=1e-2)
+
+    @fresh_cache()
     @config.patch(max_autotune=True, max_fusion_size=2)
     def test_jit_fusion_matches_aot_fusion(self):
         # In this example, AOTInductor's JIT-compile will fuse(buf1, buf2) due

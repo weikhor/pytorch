@@ -649,6 +649,7 @@ def convolution(
             and is_ones(stride)
             and is_zeros(padding)
             and groups == 1
+            and not V.graph.cpp_wrapper  # conv1x1_via_mm only has a Python implementation
         ):
             choices.append(aten_conv1x1_via_mm.bind(args, layout))
 
