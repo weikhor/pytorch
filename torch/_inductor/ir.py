@@ -9260,6 +9260,10 @@ class SetSourceTensorKernel(ExternKernelAlloc):
     def __init__(self, self_tensor: IRNode, storage_tensor: IRNode) -> None:
         storage_tensor = self.realize_input(storage_tensor)
         storage_tensor.freeze_layout()
+        # Realize pending readers of the mutated buffers before this kernel is
+        # registered, so they are scheduled ahead of the mutation.
+        V.graph.mark_buffer_mutated(self_tensor.get_name())
+        V.graph.mark_buffer_mutated(storage_tensor.get_name())
         super().__init__(
             storage_tensor.get_layout(),
             [self_tensor, storage_tensor],
@@ -9285,6 +9289,10 @@ class ShallowCopyDataKernel(ExternKernelAlloc):
     def __init__(self, self_tensor: IRNode, storage_tensor: IRNode) -> None:
         storage_tensor = self.realize_input(storage_tensor)
         storage_tensor.freeze_layout()
+        # Realize pending readers of the mutated buffers before this kernel is
+        # registered, so they are scheduled ahead of the mutation.
+        V.graph.mark_buffer_mutated(self_tensor.get_name())
+        V.graph.mark_buffer_mutated(storage_tensor.get_name())
         super().__init__(
             storage_tensor.get_layout(),
             [self_tensor, storage_tensor],

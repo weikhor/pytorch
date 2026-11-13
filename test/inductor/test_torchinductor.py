@@ -21358,6 +21358,25 @@ def forward(self, arg0_1: "Sym(s77)", arg1_1: "Sym(s27)", arg2_1: "Sym(s53)", ar
         self.assertEqual(out_eager, out_compiled)
         self.assertEqual(x_eager.device, x_compiled.device)
 
+    def test_tensor_data_inplace_add_0dim(self):
+        # https://github.com/pytorch/pytorch/issues/202509
+        def func(p, x):
+            p.data += x
+            return torch.relu(p)
+
+        for shape in [(), (3,)]:
+            p_eager = torch.zeros(shape, device=self.device)
+            p_compiled = p_eager.clone()
+            x = torch.ones(shape, device=self.device)
+
+            torch._dynamo.reset()
+            with torch.no_grad():
+                out_eager = func(p_eager, x)
+                out_compiled = torch.compile(func, backend="inductor")(p_compiled, x)
+
+            self.assertEqual(out_eager, out_compiled)
+            self.assertEqual(p_eager, p_compiled)
+
     def test_jvp_compile_backward(self):
         def jvp_fn(f, x):
             return torch.func.jvp(f, (x.clone(),), (torch.ones_like(x),))[1]
